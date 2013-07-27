@@ -19,12 +19,14 @@ public class FFWmvServer extends Thread{
 	private int port = defaultport;
 	private Thread seqThread;
 	private AsfStreamData asfData = new AsfStreamData();
+	private Socket EncodeSocket = null;
 	
 	public FFWmvServer(int port) {
 		this.port = port;
 	}
 
 	public static void main(String[] args) {
+		
 		int port = defaultport;
 		if(args.length>0){
 			try{
@@ -59,6 +61,7 @@ public class FFWmvServer extends Thread{
 				rd.start();
 			}
 		} catch (IOException ie) {
+			ie.printStackTrace();
 			System.out.println("stop");
 		} catch (Exception e) {
 			e.printStackTrace();
@@ -85,7 +88,7 @@ public class FFWmvServer extends Thread{
 	    	while(header.length()!=0){
 	    		header = cin.readline();
 	    		sb.append(header);
-	    		sb.append("\n");
+	    		sb.append("\r\n");
 	    	}
 			
 			return sb.toString();
@@ -95,17 +98,21 @@ public class FFWmvServer extends Thread{
 			return cin.readChunk();
 	    }
 	    
+	    private void hexOutput(byte[] data){
+	    	boolean debug = true;
+			if(hexString(data, 2).equals("82 00")){
+				int i = new Random().nextInt(30);
+				if(i>1) debug = false;
+			}
+			if(debug){
+				System.out.println(data.length+" "+hexString(data, 16));
+			}
+	    }
+	    
 	    private void onAsfPacket(byte[] data) throws Exception{
 
 			if(server.debug){
-				boolean debug = true;
-				if(hexString(data, 2).equals("82 00")){
-					int i = new Random().nextInt(30);
-					if(i>1) debug = false;
-				}
-				if(debug){
-					System.out.println(data.length+" "+hexString(data, 16));
-				}
+				hexOutput(data);
 			}
 
 	    	//$H
@@ -147,18 +154,27 @@ public class FFWmvServer extends Thread{
 
 	        	//ffmpeg
 	    		if(httpHeader.indexOf("POST")==0){
-	    			if(server.debug){
-	    		    	System.out.println("post from:"+socket.getInetAddress());
+	    			//同時に２つの送信接続が来たら切断する
+	    			if(EncodeSocket!=null){
+	    				throw new Exception();
 	    			}
-	    			server.asfData.reset();
-	        	
-		        	byte[] chunkedData = new byte[1];//dummy
-		        	while(chunkedData.length>0){
-		        		chunkedData = readHttpChunkedData(cin);
-		        		onAsfPacket(chunkedData);
-		        	}
-
-	    			//server.asfData.reset();
+	    			EncodeSocket = socket;
+	    			try{
+		    			if(server.debug){
+		    		    	System.out.println("post from:"+socket.getInetAddress());
+		    			}
+		    			server.asfData.reset();
+		        	
+			        	byte[] chunkedData = new byte[1];//dummy
+			        	while(chunkedData.length>0){
+			        		chunkedData = readHttpChunkedData(cin);
+			        		onAsfPacket(chunkedData);
+			        	}
+		    			//server.asfData.reset();
+	    			}catch(Exception e){
+	    				
+	    			}
+	    			EncodeSocket = null;
 	    		}
 	    		
 	    		//peercast, wmp
@@ -170,7 +186,6 @@ public class FFWmvServer extends Thread{
 	    			byte[] streamingHeader = server.asfData.getHeader();
 	    			
 	    			if(streamingHeader==null){
-	        			System.out.println("streamingHeader=null");
 	    				throw new Exception();
 	    				//プレーヤーが固まるので送信しない
 	        			//String header = getCloseHttpHeader();
@@ -181,7 +196,6 @@ public class FFWmvServer extends Thread{
 	    				String header = HttpHeaderTemplate.getStreamingRequest(streamingHeader);
 	        			os.write(header.getBytes());
 	        			os.write(streamingHeader);
-	        			System.out.println("xPlayStrm=1???");
 	    				throw new Exception();
 	    			}
 	    			
@@ -191,6 +205,7 @@ public class FFWmvServer extends Thread{
 	    			os.flush();
 	    			
 	    			int wait = 0;
+	    			int nowait = 0;
 	    			int seq = server.asfData.getSequence()-20;
 	    			byte[] chunk;
 	    			while(true){
@@ -200,25 +215,27 @@ public class FFWmvServer extends Thread{
 	        				os.flush();
 	        				seq++;
 	        				wait = 0;
+	        				nowait++;
+	        				if(nowait>100){
+	        					Thread.sleep(100);
+	        					nowait = 0;
+	        				}
 	    				}else{
 	    					int latestseq = server.asfData.getSequence();
-	    					System.out.println("latestseq:"+latestseq);
 		    				if(seq>=latestseq && latestseq>0){
-		    					Thread.sleep(500);
+		    					Thread.sleep(100);
 		    					wait++;
-		    					if(wait>50){
-		    						break;
-		    					}
+		    					nowait = 0;
 		    				}else{
 		    					break;
 		    				}
+	    					if(wait>50) break;
 	    				}
-						int latestseq = server.asfData.getSequence();
-						System.out.println("sendseq:"+seq + " latestseq:"+latestseq);
+						
 	    			}
 	    		}
 	    	} catch(IOException ie){
-	    		ie.printStackTrace();
+	    		System.out.println("connection abort");
 	        } catch(Exception e) {
 			}
 	        

@@ -52,8 +52,8 @@ public class ChunkedInputStream {
 	    do {
 	    	r = in.read();
 	    	baos.write(r);
-	    	if(baos.size()>=1024*64){
-	    		baos.reset();
+	    	if(baos.size()>=64*1024){
+	    		throw new IOException("64k overflow");
 	    	}
 	    } while (!(r==10));//LF
 	    return baos.toString().trim();
