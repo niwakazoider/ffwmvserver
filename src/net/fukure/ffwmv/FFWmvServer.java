@@ -115,25 +115,37 @@ public class FFWmvServer extends Thread{
 				hexOutput(data);
 			}
 
-	    	//$H
+	    	//$H (asf)
 	    	if(hexString(data, 16).toUpperCase().equals(AsfHeader.header_object_id)){
-	    		addAsfChunk(AsfHeader.ASF_STREAMING_HEADER, data);
+	    		addAsfChunk(AsfHeader.ASF_STREAMING_HEADER, data, true);
 	    	}
-
-	    	//$D
+	    	//$D (asf)
 	    	if(hexString(data, 2).equals("82 00")){
-	    		addAsfChunk(AsfHeader.ASF_STREAMING_DATA, data);
+	    		addAsfChunk(AsfHeader.ASF_STREAMING_DATA, data, true);
 	    	}
 	    	
-	    	//$E
+	    	//$H (asf_stream)
+	    	if(hexString(data, 2).equals("24 48")){
+	    		addAsfChunk(AsfHeader.ASF_STREAMING_HEADER, data, false);
+	    	}
+	    	//$D (asf_stream)
+	    	if(hexString(data, 2).equals("24 44")){
+	    		addAsfChunk(AsfHeader.ASF_STREAMING_DATA, data, false);
+	    	}
+	    	//$E (asf, asf_stream)
 	    	if(hexString(data, 2).equals("24 45")){
-	    		addAsfChunk(AsfHeader.ASF_STREAMING_END_TRANS, data);
+	    		addAsfChunk(AsfHeader.ASF_STREAMING_END_TRANS, data, false);
 	    	}
 	    }
 	    
 
-		private void addAsfChunk(String type, byte[] data) throws Exception{
-			byte[] chunk = AsfHeader.parseHeader(type, data, server.asfData.getSequence());
+		private void addAsfChunk(String type, byte[] data, boolean parse) throws Exception{
+			byte[] chunk;
+			if(parse){
+				chunk = AsfHeader.parseHeader(type, data, server.asfData.getSequence());
+			}else{
+				chunk = data;
+			}
 			if(type.equals(AsfHeader.ASF_STREAMING_HEADER)){
 				if(server.debug){
 					System.out.println("new streaming header");
